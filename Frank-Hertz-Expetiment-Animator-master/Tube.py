@@ -1,5 +1,6 @@
 import pygame
 import math
+import time
 from ParticalModule import Atom, Electron
 from BasicModule import BasicModule
 from pygame.sprite import Group
@@ -47,9 +48,11 @@ class Tube(BasicModule):
 
         # 电流滤波与采样计时器，平滑优化参数
         self.smoothed_Ie = 0.0
-        # 增大 alpha 让电流对激发更敏感（峰更明显）
-        self.alpha = 0.12
+        # 减小 alpha 让电流波动更缓慢、更平滑
+        self.alpha = 0.04
         self.sample_timer = 0
+        self.noise_phase = random.random() * 2 * pi
+        self.current_window = 1.5  # 采样窗口，秒
 
     def reset_particles(self):
         self.atoms.empty()
@@ -81,6 +84,20 @@ class Tube(BasicModule):
         elif self.state.gas_type == "He":
             current *= 0.45
         return max(0.0, min(current, 25.0))
+
+    def compute_current(self, ua):
+        ideal = self.frank_hertz_current(ua)
+        now = time.time()
+        recent_electrons = [t for t in self.collected_electrons if now - t <= self.current_window]
+        electron_rate = len(recent_electrons) / max(self.current_window, 0.01)
+        shot_noise = random.gauss(0.0, max(0.01, ideal * 0.02))
+        wave_noise = math.sin(now * 1.8 + self.noise_phase + ua * 0.07) * 0.08
+        pulse = max(0.0, electron_rate - 10.0) * 0.04
+        raw_current = ideal + wave_noise + shot_noise + pulse
+        self.noise_phase += 0.003
+        raw_current = max(0.0, min(raw_current, 25.0))
+        self.smoothed_Ie = self.smoothed_Ie * (1.0 - self.alpha) + raw_current * self.alpha
+        return max(0.0, min(self.smoothed_Ie, 25.0))
 
     def draw(self):
         self.screen.blit(self.image, self.image_rect)
@@ -131,7 +148,7 @@ class Tube(BasicModule):
                 e.vx = v * math.cos(theta)
                 e.vy = v * math.sin(theta)
 
-        self.state.Ie = self.frank_hertz_current(self.state.Ua)
+        self.state.Ie = self.compute_current(self.state.Ua)
 
         if self.state.helper.get('plot', False):
             ua_val = round(self.state.Ua, 1)
