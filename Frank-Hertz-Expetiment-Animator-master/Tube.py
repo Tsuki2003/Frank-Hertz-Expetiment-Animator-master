@@ -1,0 +1,138 @@
+import pygame
+import math
+from ParticalModule import Atom, Electron
+from BasicModule import BasicModule
+from pygame.sprite import Group
+import random
+from math import pi, sin, cos
+
+
+def collided(e, a):
+    dist = ((e.ball_rect.centerx - a.ball_rect.centerx) ** 2 + (e.ball_rect.centery - a.ball_rect.centery) ** 2) ** 0.5
+    return dist < 4
+
+
+class Tube(BasicModule):
+    def __init__(self, screen, state):
+        super(Tube, self).__init__(screen)
+        self.state = state
+
+        # 仅保存线段坐标，不再存储draw.line返回的Rect
+        self.p_up_start = (20, 20)
+        self.p_up_end = (580, 20)
+
+        self.p_down_start = (20, 280)
+        self.p_down_end = (580, 280)
+
+        self.p_collect_start = (560, 20)
+        self.p_collect_end = (560, 280)
+
+        self.p_arid_start = (440, 40)
+        self.p_arid_end = (440, 260)
+
+        self.p_control_start = (140, 40)
+        self.p_control_end = (140, 260)
+
+        self.image = pygame.image.load('images/light.png')
+        self.image_rect = self.image.get_rect()
+        self.image_rect.centery = 150
+        self.image_rect.centerx = 20
+
+        self.atoms = Group()
+        self.electrons = Group()
+
+        self.generate_atoms()
+        self.delete_electrons = []
+        self.collected_electrons = []
+
+        # 电流滤波与采样计时器，平滑优化参数
+        self.smoothed_Ie = 0.0
+        # 增大 alpha 让电流对激发更敏感（峰更明显）
+        self.alpha = 0.12
+        self.sample_timer = 0
+
+    def reset_particles(self):
+        self.atoms.empty()
+        self.electrons.empty()
+        self.delete_electrons.clear()
+        self.collected_electrons.clear()
+        self.smoothed_Ie = 0.0
+        self.sample_timer = 0
+        self.generate_atoms()
+        print(f"Tube已重置粒子，当前gas_type={self.state.gas_type}")
+
+    def frank_hertz_current(self, ua):
+        v0 = self.state.gas_config[self.state.gas_type]["v0"]
+        effective_ua = max(0.0, ua - self.state.Ug)
+        emission = max(0.3, self.state.Uf)
+        suppression = 1.0 + self.state.Ue * 0.08
+        base = max(0.0, effective_ua - 8.0) * 0.18
+        centers = [v0 * 1.0 + 1.0, v0 * 2.0 + 1.2, v0 * 3.0 + 1.3, v0 * 4.0 + 1.5, v0 * 5.0 + 1.7]
+        amps = [5.5, 9.0, 11.0, 13.5, 15.0]
+        widths = [2.4, 2.8, 3.2, 3.5, 3.9]
+        peak_sum = 0.0
+        for amp, center, width in zip(amps, centers, widths):
+            peak_sum += amp * math.exp(-((effective_ua - center) ** 2) / (2 * width * width))
+        current = (base + peak_sum) * emission / suppression
+        if self.state.gas_type == "Hg":
+            current *= 0.65
+        elif self.state.gas_type == "Ar":
+            current *= 0.85
+        elif self.state.gas_type == "He":
+            current *= 0.45
+        return max(0.0, min(current, 25.0))
+
+    def draw(self):
+        self.screen.blit(self.image, self.image_rect)
+        pygame.draw.line(self.screen, (0, 0, 0), self.p_up_start, self.p_up_end)
+        pygame.draw.line(self.screen, (0, 0, 0), self.p_down_start, self.p_down_end)
+        pygame.draw.line(self.screen, (0, 0, 0), self.p_collect_start, self.p_collect_end)
+        pygame.draw.line(self.screen, (100, 100, 100), self.p_arid_start, self.p_arid_end)
+        pygame.draw.line(self.screen, (100, 100, 100), self.p_control_start, self.p_control_end)
+
+    def generate_atoms(self):
+        for _ in range(220):
+            self.atoms.add(Atom(self.screen, x=random.random()*500+40, y=random.random()*240+30))
+
+    def generate_electrons(self, ratio):
+        for _ in range(2):
+            if random.random() < ratio:
+                self.electrons.add(Electron(self.screen, x=random.random()*60+20, y=random.random()*60+120, tube=self))
+
+    def update(self):
+        self.draw()
+        self.atoms.update()
+        self.electrons.update()
+        for e in self.delete_electrons:
+            self.electrons.remove(e)
+        self.generate_electrons(ratio=self.state.Uf)
+
+        # 碰撞逻辑：更确定性的非弹性散射以产生可重复的能量损失峰
+        collisions = pygame.sprite.groupcollide(self.electrons, self.atoms, False, False, collided=collided)
+        for e, atoms in collisions.items():
+            v = e.velocity
+            v0 = self.state.gas_config[self.state.gas_type]["v0"]
+
+            # 如果电子能量足够达到激发阈值，执行确定性的非弹性碰撞：
+            # 电子损失固定能量 v0（以速度平方差），并保持主要向右前进
+            if v >= v0:
+                v_res_sq = v**2 - v0**2
+                if v_res_sq < 0:
+                    v_res_sq = 0
+                v_res = math.sqrt(v_res_sq)
+                # 使电子主要向右（阳极方向），减小垂直分量
+                e.vx = max(0.0, v_res)
+                e.vy = 0.0
+                for a in atoms:
+                    a.activate_step = 100
+            else:
+                # 能量不足时做小角度弹性散射，保留一定的前向动量
+                theta = (random.random() - 0.5) * 0.2
+                e.vx = v * math.cos(theta)
+                e.vy = v * math.sin(theta)
+
+        self.state.Ie = self.frank_hertz_current(self.state.Ua)
+
+        if self.state.helper.get('plot', False):
+            ua_val = round(self.state.Ua, 1)
+            self.state.helper['UI'][ua_val] = self.state.Ie
