@@ -48,7 +48,7 @@ class Tube(BasicModule):
 
         # 电流滤波与采样计时器，平滑优化参数
         self.smoothed_Ie = 0.0
-        # 减小 alpha 让电流波动更缓慢、更平滑
+        # 减小 alpha 让电流变化更缓慢、更平滑
         self.alpha = 0.04
         self.sample_timer = 0
         self.noise_phase = random.random() * 2 * pi
@@ -69,17 +69,27 @@ class Tube(BasicModule):
         effective_ua = max(0.0, ua - self.state.Ug)
         emission = max(0.3, self.state.Uf)
         suppression = 1.0 + self.state.Ue * 0.08
-        base = max(0.0, effective_ua - 8.0) * 0.18
-        centers = [v0 * 1.0 + 1.0, v0 * 2.0 + 1.2, v0 * 3.0 + 1.3, v0 * 4.0 + 1.5, v0 * 5.0 + 1.7]
-        amps = [5.5, 9.0, 11.0, 13.5, 15.0]
-        widths = [2.4, 2.8, 3.2, 3.5, 3.9]
-        peak_sum = 0.0
-        for amp, center, width in zip(amps, centers, widths):
-            peak_sum += amp * math.exp(-((effective_ua - center) ** 2) / (2 * width * width))
-        current = (base + peak_sum) * emission / suppression
         if self.state.gas_type == "Hg":
-            current *= 0.65
-        elif self.state.gas_type == "Ar":
+            base = max(0.0, effective_ua - 8.0) * 0.14
+            centers = [v0 * n + 1.0 + 0.1 * (n - 1) for n in range(1, 9)]
+            amps = [5.5, 9.0, 11.0, 13.0, 14.5, 16.0, 17.0, 18.0]
+            widths = [2.4, 2.6, 2.8, 3.0, 3.2, 3.4, 3.6, 3.8]
+            peak_sum = 0.0
+            for amp, center, width in zip(amps, centers, widths):
+                peak_sum += amp * math.exp(-((effective_ua - center) ** 2) / (2 * width * width))
+            tail = max(0.0, effective_ua - centers[-1]) * 0.10
+            current = (base + peak_sum + tail) * emission / suppression * 0.65
+        else:
+            base = max(0.0, effective_ua - 8.0) * 0.18
+            centers = [v0 * n + 1.0 + 0.15 * (n - 1) for n in range(1, 8)]
+            amps = [5.5, 9.0, 11.0, 13.5, 15.0, 14.0, 12.0]
+            widths = [2.4, 2.8, 3.2, 3.5, 3.9, 4.4, 4.8]
+            peak_sum = 0.0
+            for amp, center, width in zip(amps, centers, widths):
+                peak_sum += amp * math.exp(-((effective_ua - center) ** 2) / (2 * width * width))
+            tail = max(0.0, effective_ua - centers[-1]) * 0.16
+            current = (base + peak_sum + tail) * emission / suppression
+        if self.state.gas_type == "Ar":
             current *= 0.85
         elif self.state.gas_type == "He":
             current *= 0.45
@@ -91,10 +101,10 @@ class Tube(BasicModule):
         recent_electrons = [t for t in self.collected_electrons if now - t <= self.current_window]
         electron_rate = len(recent_electrons) / max(self.current_window, 0.01)
         shot_noise = random.gauss(0.0, max(0.01, ideal * 0.02))
-        wave_noise = math.sin(now * 1.8 + self.noise_phase + ua * 0.07) * 0.08
-        pulse = max(0.0, electron_rate - 10.0) * 0.04
+        wave_noise = math.sin(now * 1.2 + self.noise_phase + ua * 0.06) * 0.06
+        pulse = max(0.0, electron_rate - 12.0) * 0.03
         raw_current = ideal + wave_noise + shot_noise + pulse
-        self.noise_phase += 0.003
+        self.noise_phase += 0.002
         raw_current = max(0.0, min(raw_current, 25.0))
         self.smoothed_Ie = self.smoothed_Ie * (1.0 - self.alpha) + raw_current * self.alpha
         return max(0.0, min(self.smoothed_Ie, 25.0))
@@ -152,4 +162,4 @@ class Tube(BasicModule):
 
         if self.state.helper.get('plot', False):
             ua_val = round(self.state.Ua, 1)
-            self.state.helper['UI'][ua_val] = self.state.Ie
+            self.state.helper['UI'][ua_val] = self.frank_hertz_current(self.state.Ua)
