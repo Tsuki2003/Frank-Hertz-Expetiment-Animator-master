@@ -7,9 +7,13 @@ class State(object):
         self.Ua = 0
         self.Ue = 0
         self.Ie = 0
+        self.magnet_enabled = False
+        self.magnet_strength = 0.0
+        self.magnet_direction = 1
         self.helper = {
             'plot': False,
-            'UI': {}
+            'UI': {},
+            'plot_temp': False
         }
         self.gas_type = "Ne"   # 默认氖
         self.gas_config = {
@@ -32,4 +36,6 @@ class State(object):
                 self.Ue = value
             if key == 'Ie':
                 self.Ie = value
+            if key == 'magnet_strength':
+                self.magnet_strength = value
         return set_value

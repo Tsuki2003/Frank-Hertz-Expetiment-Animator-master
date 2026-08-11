@@ -79,6 +79,23 @@ class Electron(ParticalModule):
         elif self.ball_rect.centerx > 440:
             self.vx -= (self.tube.state.Ue) / 50
 
+        if self.tube.state.magnet_enabled and self.tube.state.magnet_strength > 0:
+            b_strength = self.tube.state.magnet_strength
+            sign = self.tube.state.magnet_direction
+            if 140 <= self.ball_rect.centerx <= 520:
+                angle = sign * 0.04 * b_strength
+                old_vx = self.vx
+                old_vy = self.vy
+                self.vx = old_vx * cos(angle) - old_vy * sin(angle)
+                self.vy = old_vx * sin(angle) + old_vy * cos(angle)
+
+        speed = self.velocity
+        max_speed = 5.2
+        if speed > max_speed:
+            scale = max_speed / speed
+            self.vx *= scale
+            self.vy *= scale
+
     @property
     def velocity(self):
         return (self.vx**2 + self.vy**2) ** 0.5

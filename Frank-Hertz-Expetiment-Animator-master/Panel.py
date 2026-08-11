@@ -10,13 +10,21 @@ from Tube import Tube
 from PlotModule import PlotModule
 
 
+def get_text_font(size):
+    for name in ['SimHei', 'Microsoft YaHei', 'MSYH', 'Arial', 'sans-serif']:
+        font_path = pygame.font.match_font(name)
+        if font_path:
+            return pygame.font.Font(font_path, size)
+    return pygame.font.SysFont(None, size)
+
+
 class Button:
     def __init__(self, screen, x, y, w, h, text, callback):
         self.screen = screen
         self.rect = pygame.Rect(x, y, w, h)
         self.text = text
         self.callback = callback
-        self.font = pygame.font.SysFont(None,24)
+        self.font = get_text_font(18)
         self.color_normal = (60,60,180)
         self.color_hover = (100,100,220)
         self.color = self.color_normal
@@ -39,12 +47,14 @@ class Button:
 
 
 class VoltageControler(BasicModule):
-    def __init__(self, screen, x, y, text, max_value, state):
+    def __init__(self, screen, x, y, text, max_value, state, label_text=None, value_attr=None):
         super(VoltageControler, self).__init__(screen)
 
-        label = LabelModule(screen, x=x, y=y, text=text)
-        scrollbar = ScrollBarModule(screen, x=x+60, y=y, max_value=max_value, set_value=state.set_param(text))
-        digit_displayer = DisplayModule(screen, x=x+210, y=y, get_text=lambda:"{:.2f}".format(getattr(state, text)))
+        label_name = label_text or text
+        value_name = value_attr or text
+        label = LabelModule(screen, x=x, y=y, text=label_name)
+        scrollbar = ScrollBarModule(screen, x=x+60, y=y, max_value=max_value, set_value=state.set_param(value_name))
+        digit_displayer = DisplayModule(screen, x=x+210, y=y, get_text=lambda:"{:.2f}".format(getattr(state, value_name)))
 
         self.add_sub_module('label', label)
         self.add_sub_module('scrollbar', scrollbar)
@@ -98,9 +108,12 @@ class Panel(BasicModule):
         self.add_sub_module('Ug', VoltageControler(screen, x=10, y=400, text='Ug', max_value=3, state=state))
         self.add_sub_module('Ua', VoltageControler(screen, x=10, y=480, text='Ua', max_value=80, state=state))
         self.add_sub_module('Ue', VoltageControler(screen, x=10, y=560, text='Ue', max_value=15, state=state))
+        self.add_sub_module('magnet', VoltageControler(screen, x=10, y=640, text='magnet_strength', max_value=5, state=state, label_text='磁场 B', value_attr='magnet_strength'))
 
         self.ua_increment_button = Button(screen, 920, 20, 120, 32, '+0.5V Ua', self.increase_Ua)
         self.ua_scan_button = Button(screen, 920, 60, 120, 32, 'Auto Scan Ua', self.toggle_auto_scan)
+        self.magnet_enable_button = Button(screen, 920, 100, 140, 32, '磁场:关', self.toggle_magnet)
+        self.magnet_direction_button = Button(screen, 920, 140, 140, 32, '极性:+', self.toggle_magnet_direction)
         self.state.helper['auto_scan'] = False
         self.auto_scan_timer = 0
 
@@ -134,6 +147,18 @@ class Panel(BasicModule):
         else:
             print("停止自动扫描 Ua")
 
+    def toggle_magnet(self):
+        self.state.magnet_enabled = not self.state.magnet_enabled
+        print(f"磁场已{'开启' if self.state.magnet_enabled else '关闭'}")
+
+    def toggle_magnet_direction(self):
+        self.state.magnet_direction *= -1
+        print(f"磁场极性切换为 {'-1' if self.state.magnet_direction < 0 else '+1'}")
+
+    def update_button_labels(self):
+        self.magnet_enable_button.text = '磁场:开' if self.state.magnet_enabled else '磁场:关'
+        self.magnet_direction_button.text = '极性:-' if self.state.magnet_direction < 0 else '极性:+'
+
     def update(self, event=None):
         for sub_module in self.sub_module.values():
             sub_module.update()
@@ -141,6 +166,9 @@ class Panel(BasicModule):
             btn.draw()
         self.ua_increment_button.draw()
         self.ua_scan_button.draw()
+        self.update_button_labels()
+        self.magnet_enable_button.draw()
+        self.magnet_direction_button.draw()
 
         if self.state.helper.get('auto_scan', False):
             self.auto_scan_timer += 1
@@ -157,3 +185,5 @@ class Panel(BasicModule):
                 btn.handle_event(event)
             self.ua_increment_button.handle_event(event)
             self.ua_scan_button.handle_event(event)
+            self.magnet_enable_button.handle_event(event)
+            self.magnet_direction_button.handle_event(event)
