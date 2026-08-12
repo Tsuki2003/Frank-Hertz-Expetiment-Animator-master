@@ -33,3 +33,16 @@ def test_magnet_field_changes_electron_velocity_direction():
     vy_after = e.vy
 
     assert vx_after != vx_before or vy_after != vy_before
+
+
+def test_field_direction_can_be_reversed_per_axis():
+    state = State()
+
+    state.reverse_axial_direction()
+    assert state.axial_direction == -1
+
+    state.reverse_transverse_direction()
+    assert state.transverse_direction == -1
+
+    state.reverse_axial_direction()
+    assert state.axial_direction == 1

@@ -113,10 +113,12 @@ class Panel(BasicModule):
         self.ua_increment_button = Button(screen, 920, 20, 120, 32, '+0.5V Ua', self.increase_Ua)
         self.ua_scan_button = Button(screen, 920, 60, 120, 32, 'Auto Scan Ua', self.toggle_auto_scan)
         # 独立纵向/横向磁场开关与步进控制（纵向替代原轴向）
+        self.axial_reverse_button = Button(screen, 860, 220, 55, 28, '反向', self.reverse_axial_direction)
         self.axial_enable_button = Button(screen, 920, 220, 140, 28, '纵向B:关', self.toggle_axial)
         self.axial_inc_button = Button(screen, 1068, 220, 40, 28, '+5', lambda: self.change_axial(5))
         self.axial_dec_button = Button(screen, 1116, 220, 40, 28, '-5', lambda: self.change_axial(-5))
 
+        self.trans_reverse_button = Button(screen, 860, 260, 55, 28, '反向', self.reverse_transverse_direction)
         self.trans_enable_button = Button(screen, 920, 260, 140, 28, '横向B:关', self.toggle_transverse)
         self.trans_inc_button = Button(screen, 1068, 260, 40, 28, '+5', lambda: self.change_transverse(5))
         self.trans_dec_button = Button(screen, 1116, 260, 40, 28, '-5', lambda: self.change_transverse(-5))
@@ -157,6 +159,14 @@ class Panel(BasicModule):
             print("停止自动扫描 Ua")
 
     # 磁场开关与极性相关函数已移除：仅通过轴向/横向强度档位控制（0 为关闭）
+
+    def reverse_axial_direction(self):
+        self.state.reverse_axial_direction()
+        print(f"轴向磁场方向已反转，当前方向: {self.state.axial_direction}")
+
+    def reverse_transverse_direction(self):
+        self.state.reverse_transverse_direction()
+        print(f"横向磁场方向已反转，当前方向: {self.state.transverse_direction}")
 
     def toggle_axial(self):
         self.state.axial_enabled = not getattr(self.state, 'axial_enabled', False)
@@ -204,9 +214,11 @@ class Panel(BasicModule):
         self.update_button_labels()
         # 不再绘制全局磁场开关与极性按钮
         # 轴向/横向控制
+        self.axial_reverse_button.draw()
         self.axial_enable_button.draw()
         self.axial_inc_button.draw()
         self.axial_dec_button.draw()
+        self.trans_reverse_button.draw()
         self.trans_enable_button.draw()
         self.trans_inc_button.draw()
         self.trans_dec_button.draw()
@@ -232,9 +244,11 @@ class Panel(BasicModule):
             self.ua_scan_button.handle_event(event)
             # 全局磁场按钮已移除；通过轴向/横向的 + / - 档位进行控制
             # axial/transverse handlers
+            self.axial_reverse_button.handle_event(event)
             self.axial_enable_button.handle_event(event)
             self.axial_inc_button.handle_event(event)
             self.axial_dec_button.handle_event(event)
+            self.trans_reverse_button.handle_event(event)
             self.trans_enable_button.handle_event(event)
             self.trans_inc_button.handle_event(event)
             self.trans_dec_button.handle_event(event)

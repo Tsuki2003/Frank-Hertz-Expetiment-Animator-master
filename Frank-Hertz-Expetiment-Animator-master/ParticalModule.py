@@ -84,7 +84,8 @@ class Electron(ParticalModule):
         # 注：这里的系数和算法是我调出来的经验值，可能存在物理上的瑕疵，若你是物理学家，别急着投诉我。
         axial_on = getattr(self.tube.state, 'axial_enabled', False)
         trans_on = getattr(self.tube.state, 'transverse_enabled', False)
-        sign = getattr(self.tube.state, 'magnet_direction', 1)
+        axial_dir = getattr(self.tube.state, 'axial_direction', 1)
+        sign = getattr(self.tube.state, 'transverse_direction', getattr(self.tube.state, 'magnet_direction', 1))
         if trans_on or axial_on:
             b_strength_trans = getattr(self.tube.state, 'transverse_strength', 0.0) if trans_on else 0.0
             b_strength_axial = getattr(self.tube.state, 'axial_strength', 0.0) if axial_on else 0.0
@@ -101,7 +102,7 @@ class Electron(ParticalModule):
                 # 强度按档位比例缩放，使 25 mT 有明显效果
                 self.vy *= max(0.02, 1.0 - 0.12 * (b_strength_axial/5.0))
                 dy = self.ball_rect.centery - center_y
-                self.vy += -0.004 * (b_strength_axial/5.0) * dy
+                self.vy += -0.004 * (b_strength_axial/5.0) * axial_dir * dy
 
         speed = self.velocity
         max_speed = 5.2

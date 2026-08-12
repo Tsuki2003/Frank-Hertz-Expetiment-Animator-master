@@ -12,6 +12,8 @@ class State(object):
         # 磁场方向：'transverse' 横向（垂直于管轴），'axial' 轴向（沿管轴）
         self.magnet_orientation = 'transverse'
         self.magnet_direction = 1
+        self.axial_direction = 1
+        self.transverse_direction = 1
         # 新增：独立的轴向和横向磁场开关与强度（单位：mT，档位 0,5,10,15,20,25）
         self.axial_enabled = False
         self.transverse_enabled = False
@@ -29,7 +31,16 @@ class State(object):
             "Ne": {"v0":16.7, "name":"氖 Ne"},
             "He": {"v0":24.6, "name":"氦 He"}
         }
-        
+
+    def reverse_axial_direction(self):
+        self.axial_direction *= -1
+        self.magnet_direction = self.transverse_direction
+        return self.axial_direction
+
+    def reverse_transverse_direction(self):
+        self.transverse_direction *= -1
+        self.magnet_direction = self.transverse_direction
+        return self.transverse_direction
 
     def set_param(self, key):
         def set_value(value):
