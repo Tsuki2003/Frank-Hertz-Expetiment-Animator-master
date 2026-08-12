@@ -70,11 +70,23 @@ class Tube(BasicModule):
         effective_ua = max(0.0, ua - self.state.Ug)
         emission = max(0.3, self.state.Uf)
         suppression = 1.0 + self.state.Ue * 0.08
-        magnet_strength = self.state.magnet_strength if apply_magnet and self.state.magnet_enabled else 0.0
-        shift = 0.12 * magnet_strength
-        width_factor = 1.0 + 0.16 * magnet_strength
-        amplitude_factor = max(0.2, 1.0 - 0.08 * magnet_strength)
-        base_factor = max(0.35, 1.0 - 0.06 * magnet_strength)
+        # 兼容旧字段：如果使用全局 magnet_enabled/magnet_strength，则以其为基准
+        magnet_strength = 0.0
+        if apply_magnet:
+            if getattr(self.state, 'magnet_enabled', False) and getattr(self.state, 'magnet_strength', 0.0) > 0:
+                magnet_strength = self.state.magnet_strength
+            # 优先使用独立轴向/横向档位来影响峰位/宽度（作为局部微调）
+            # 这里定义一个简单的 shift/width/amplitude 基于横向强度的贡献
+            transverse = getattr(self.state, 'transverse_strength', 0.0) if getattr(self.state, 'transverse_enabled', False) else 0.0
+            axial = getattr(self.state, 'axial_strength', 0.0) if getattr(self.state, 'axial_enabled', False) else 0.0
+            # 将档位 mT 缩放到 0..1 范围（以 25mT 为 max）
+            t_norm = transverse / 25.0
+            a_norm = axial / 25.0
+            # combine for minor spectral shift and width modulation
+            shift = 0.12 * magnet_strength + 0.8 * t_norm
+            width_factor = 1.0 + 0.5 * t_norm
+            amplitude_factor = max(0.2, 1.0 - 0.5 * t_norm)
+            base_factor = max(0.35, 1.0 - 0.3 * a_norm)
 
         if self.state.gas_type == "Hg":
             base = max(0.0, effective_ua - 8.0) * 0.14 * base_factor
@@ -102,11 +114,25 @@ class Tube(BasicModule):
         elif self.state.gas_type == "He":
             current *= 0.45
 
-        if apply_magnet and self.state.magnet_enabled:
-            current *= max(0.05, 1.0 - 0.08 * magnet_strength)
-            if effective_ua < 20:
-                current *= max(0.05, 1.0 - 0.05 * magnet_strength)
-
+        # 结合独立轴向/横向档位影响电流：横向降低收集效率，轴向提升（聚焦）
+        if apply_magnet:
+            # 基于旧字段的全局弱影响
+            if getattr(self.state, 'magnet_enabled', False) and getattr(self.state, 'magnet_strength', 0.0) > 0:
+                ms = self.state.magnet_strength
+                current *= max(0.05, 1.0 - 0.08 * ms)
+                if effective_ua < 20:
+                    current *= max(0.05, 1.0 - 0.05 * ms)
+            # 横向：按横向强度衰减
+            t = getattr(self.state, 'transverse_strength', 0.0) if getattr(self.state, 'transverse_enabled', False) else 0.0
+            if t > 0:
+                # 档位越高，损失越大；25 mT 导致最大衰减
+                decay = min(0.95, 0.18 * (t/5.0))
+                current *= max(0.02, 1.0 - decay)
+            # 轴向：按轴向强度增强（聚焦）
+            a = getattr(self.state, 'axial_strength', 0.0) if getattr(self.state, 'axial_enabled', False) else 0.0
+            if a > 0:
+                boost = 0.10 * (a/5.0)
+                current *= (1.0 + boost)
         return max(0.0, min(current, 25.0))
 
     def compute_current(self, ua):
@@ -133,27 +159,31 @@ class Tube(BasicModule):
 
         magnet_x, magnet_y = 220, 80
         magnet_w, magnet_h = 90, 120
-        body_color = (70, 70, 70) if not self.state.magnet_enabled else (95, 95, 95)
+        any_field = getattr(self.state, 'axial_enabled', False) or getattr(self.state, 'transverse_enabled', False) or getattr(self.state, 'magnet_enabled', False)
+        body_color = (70, 70, 70) if not any_field else (95, 95, 95)
         pygame.draw.rect(self.screen, body_color, (magnet_x, magnet_y, magnet_w, magnet_h))
         pygame.draw.rect(self.screen, (220, 220, 220), (magnet_x + 8, magnet_y + 8, magnet_w - 16, magnet_h - 16), 2)
 
-        pole_color_left = (255, 0, 0) if self.state.magnet_enabled else (180, 80, 80)
-        pole_color_right = (0, 0, 255) if self.state.magnet_enabled else (90, 90, 180)
+        pole_color_left = (255, 0, 0) if any_field else (180, 80, 80)
+        pole_color_right = (0, 0, 255) if any_field else (90, 90, 180)
         pygame.draw.rect(self.screen, pole_color_left, (magnet_x + 16, magnet_y + 22, 18, 70))
         pygame.draw.rect(self.screen, pole_color_right, (magnet_x + 56, magnet_y + 22, 18, 70))
 
+        # 标注磁铁示意，你知道照这个贴图有多麻烦吗，气死我了
         label = self.mag_font.render('磁铁', True, (0, 0, 0))
         self.screen.blit(label, (magnet_x + 18, magnet_y - 20))
-        state_label = self.mag_font.render('开' if self.state.magnet_enabled else '关', True, (0, 120, 0) if self.state.magnet_enabled else (120, 0, 0))
+        # 现在改为纵向/横向各自控制，旧的全局开关已移除
+        state_label = self.mag_font.render('', True, (0, 0, 0))
         self.screen.blit(state_label, (magnet_x + 20, magnet_y + magnet_h + 8))
 
-        field_color = (0, 120, 255) if self.state.magnet_enabled else (140, 140, 140)
-        for i in range(8):
-            x = magnet_x + 12 + i * 8
-            pygame.draw.line(self.screen, field_color, (x, magnet_y + magnet_h + 10), (x + 6, magnet_y + magnet_h + 34), 2)
-            pygame.draw.line(self.screen, field_color, (x + 6, magnet_y + magnet_h + 34), (x + 12, magnet_y + magnet_h + 10), 1)
-
-        if self.state.magnet_enabled:
+        # 根据不同磁场类型绘制不同的示意：横向用竖直箭头，轴向用聚焦光圈
+        if getattr(self.state, 'transverse_enabled', False):
+            field_color = (0, 120, 255)
+            for i in range(8):
+                x = magnet_x + 12 + i * 8
+                pygame.draw.line(self.screen, field_color, (x, magnet_y + magnet_h + 10), (x + 6, magnet_y + magnet_h + 34), 2)
+                pygame.draw.line(self.screen, field_color, (x + 6, magnet_y + magnet_h + 34), (x + 12, magnet_y + magnet_h + 10), 1)
+            # 半透明覆盖表示作用区
             zone_color = (0, 50, 120, 40)
             overlay = pygame.Surface((300, 220), pygame.SRCALPHA)
             overlay.fill(zone_color)
@@ -163,8 +193,21 @@ class Tube(BasicModule):
                 x = 160 + i * 55
                 pygame.draw.line(self.screen, arrow_color, (x, 60), (x, 230), 1)
                 pygame.draw.polygon(self.screen, arrow_color, [(x - 3, 65), (x + 3, 65), (x, 58)])
-            b_label = self.mag_font.render('B区', True, arrow_color)
+            b_label = self.mag_font.render('B⊥区', True, arrow_color)
             self.screen.blit(b_label, (320, 45))
+        if getattr(self.state, 'axial_enabled', False):
+            # 轴向：显示聚焦同心圈，颜色偏绿
+            center_x = magnet_x + magnet_w//2
+            center_y = magnet_y + magnet_h//2
+            overlay = pygame.Surface((300, 220), pygame.SRCALPHA)
+            # 更亮的轴向色
+            zone_color = (0, 200, 100, 28)
+            overlay.fill((0,0,0,0))
+            for r in range(20, 120, 20):
+                pygame.draw.circle(overlay, (0, 200, 100, 12), (150, 110), r, 2)
+            self.screen.blit(overlay, (140, 40))
+            a_label = self.mag_font.render('Bₗ区', True, (0, 160, 80))
+            self.screen.blit(a_label, (320, 45))
 
     def generate_atoms(self):
         for _ in range(220):

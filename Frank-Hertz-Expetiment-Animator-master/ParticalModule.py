@@ -79,15 +79,29 @@ class Electron(ParticalModule):
         elif self.ball_rect.centerx > 440:
             self.vx -= (self.tube.state.Ue) / 50
 
-        if self.tube.state.magnet_enabled and self.tube.state.magnet_strength > 0:
-            b_strength = self.tube.state.magnet_strength
-            sign = self.tube.state.magnet_direction
-            if 140 <= self.ball_rect.centerx <= 520:
-                angle = sign * 0.04 * b_strength
+        # 支持独立的纵向/横向磁场：分别使用 state.axial_enabled/transverse_enabled
+        # 下面的处理比较近似——并不是精确解，更多是为了视觉上表现“偏转/聚焦”的效果。
+        # 注：这里的系数和算法是我调出来的经验值，可能存在物理上的瑕疵，若你是物理学家，别急着投诉我。
+        axial_on = getattr(self.tube.state, 'axial_enabled', False)
+        trans_on = getattr(self.tube.state, 'transverse_enabled', False)
+        sign = getattr(self.tube.state, 'magnet_direction', 1)
+        if trans_on or axial_on:
+            b_strength_trans = getattr(self.tube.state, 'transverse_strength', 0.0) if trans_on else 0.0
+            b_strength_axial = getattr(self.tube.state, 'axial_strength', 0.0) if axial_on else 0.0
+            # 先处理横向 B⊥ 导致的侧向偏转（旋转速度方向）
+            if b_strength_trans > 0 and 140 <= self.ball_rect.centerx <= 520:
+                angle = sign * 0.06 * (b_strength_trans/5.0) * (1.0 + abs(self.vx) * 0.2)
                 old_vx = self.vx
                 old_vy = self.vy
                 self.vx = old_vx * cos(angle) - old_vy * sin(angle)
                 self.vy = old_vx * sin(angle) + old_vy * cos(angle)
+            # 再处理轴向 Bₗ 导致的磁聚焦（抑制横向发散并施加回复力）
+            if b_strength_axial > 0:
+                center_y = 150
+                # 强度按档位比例缩放，使 25 mT 有明显效果
+                self.vy *= max(0.02, 1.0 - 0.12 * (b_strength_axial/5.0))
+                dy = self.ball_rect.centery - center_y
+                self.vy += -0.004 * (b_strength_axial/5.0) * dy
 
         speed = self.velocity
         max_speed = 5.2

@@ -101,3 +101,35 @@ class PlotModule:
         # 绘制平滑曲线
         if smooth_points:
             pygame.draw.lines(self.screen, (180, 0, 0), False, smooth_points, 2)
+            # 识别波峰（局部极大）与波谷（局部极小）并显示坐标（全部列出）
+            values = [ie for (_, ie) in sorted_points]
+            us = [u for (u, _) in sorted_points]
+            peaks = []
+            troughs = []
+            n = len(values)
+            for i in range(1, n-1):
+                if values[i] > values[i-1] and values[i] > values[i+1]:
+                    peaks.append((us[i], values[i]))
+                if values[i] < values[i-1] and values[i] < values[i+1]:
+                    troughs.append((us[i], values[i]))
+
+            # 在曲线上标注所有峰/谷点并在右上角列出坐标
+            info_x = self.x + self.w - 220
+            info_y = self.y + 8
+            max_show = 12
+            count = 0
+            for p in peaks[:max_show]:
+                px, py = self.transform(p[0], p[1])
+                pygame.draw.circle(self.screen, (20, 80, 200), (px, py), 4)
+                text = self.font.render(f"峰 Ua={p[0]:.1f}V Ie={p[1]:.2f}", True, (20, 20, 20))
+                self.screen.blit(text, (info_x, info_y))
+                info_y += 16
+                count += 1
+            for t in troughs[:max_show]:
+                px, py = self.transform(t[0], t[1])
+                pygame.draw.circle(self.screen, (20, 180, 20), (px, py), 4)
+                text = self.font.render(f"谷 Ua={t[0]:.1f}V Ie={t[1]:.2f}", True, (20, 20, 20))
+                self.screen.blit(text, (info_x, info_y))
+                info_y += 16
+                count += 1
+            # 注：峰/谷检测使用简单的局部极值法，容易对噪声敏感；若要严谨分析，建议改为平滑+阈值或二阶导数，这是ai给我的建议，我不会实现，拉倒

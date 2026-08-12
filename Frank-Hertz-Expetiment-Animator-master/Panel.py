@@ -112,13 +112,22 @@ class Panel(BasicModule):
 
         self.ua_increment_button = Button(screen, 920, 20, 120, 32, '+0.5V Ua', self.increase_Ua)
         self.ua_scan_button = Button(screen, 920, 60, 120, 32, 'Auto Scan Ua', self.toggle_auto_scan)
-        self.magnet_enable_button = Button(screen, 920, 100, 140, 32, '磁场:关', self.toggle_magnet)
-        self.magnet_direction_button = Button(screen, 920, 140, 140, 32, '极性:+', self.toggle_magnet_direction)
+        # 独立纵向/横向磁场开关与步进控制（纵向替代原轴向）
+        self.axial_enable_button = Button(screen, 920, 220, 140, 28, '纵向B:关', self.toggle_axial)
+        self.axial_inc_button = Button(screen, 1068, 220, 40, 28, '+5', lambda: self.change_axial(5))
+        self.axial_dec_button = Button(screen, 1116, 220, 40, 28, '-5', lambda: self.change_axial(-5))
+
+        self.trans_enable_button = Button(screen, 920, 260, 140, 28, '横向B:关', self.toggle_transverse)
+        self.trans_inc_button = Button(screen, 1068, 260, 40, 28, '+5', lambda: self.change_transverse(5))
+        self.trans_dec_button = Button(screen, 1116, 260, 40, 28, '-5', lambda: self.change_transverse(-5))
         self.state.helper['auto_scan'] = False
         self.auto_scan_timer = 0
 
         self.add_sub_module('Ie', CurrentDisplayer(screen, x=300, y=300, state=state))
         self.add_sub_module('tube', Tube(screen, state))
+
+        # 显示磁场档位说明并统一小字体
+        self.font_small = get_text_font(14)
 
     def switch_gas(self, gas_name):
         """切换气体，同时重置管内粒子+清空绘图历史曲线"""
@@ -147,17 +156,43 @@ class Panel(BasicModule):
         else:
             print("停止自动扫描 Ua")
 
-    def toggle_magnet(self):
-        self.state.magnet_enabled = not self.state.magnet_enabled
-        print(f"磁场已{'开启' if self.state.magnet_enabled else '关闭'}")
+    # 磁场开关与极性相关函数已移除：仅通过轴向/横向强度档位控制（0 为关闭）
 
-    def toggle_magnet_direction(self):
-        self.state.magnet_direction *= -1
-        print(f"磁场极性切换为 {'-1' if self.state.magnet_direction < 0 else '+1'}")
+    def toggle_axial(self):
+        self.state.axial_enabled = not getattr(self.state, 'axial_enabled', False)
+        if not self.state.axial_enabled:
+            # 关闭时清零强度
+            self.state.axial_strength = 0.0
+        print(f"轴向磁场已{'开启' if self.state.axial_enabled else '关闭'}")
+
+    def change_axial(self, delta):
+        # 档位为 0,5,10,15,20,25；步进 delta 为 +/-5
+        if not getattr(self.state, 'axial_enabled', False):
+            self.state.axial_enabled = True
+        new_v = max(0, min(25, getattr(self.state, 'axial_strength', 0.0) + delta))
+        # 对齐到 5 的倍数
+        new_v = round(new_v / 5) * 5
+        self.state.axial_strength = new_v
+        print(f"轴向磁场强度: {self.state.axial_strength} mT")
+
+    def toggle_transverse(self):
+        self.state.transverse_enabled = not getattr(self.state, 'transverse_enabled', False)
+        if not self.state.transverse_enabled:
+            self.state.transverse_strength = 0.0
+        print(f"横向磁场已{'开启' if self.state.transverse_enabled else '关闭'}")
+
+    def change_transverse(self, delta):
+        if not getattr(self.state, 'transverse_enabled', False):
+            self.state.transverse_enabled = True
+        new_v = max(0, min(25, getattr(self.state, 'transverse_strength', 0.0) + delta))
+        new_v = round(new_v / 5) * 5
+        self.state.transverse_strength = new_v
+        print(f"横向磁场强度: {self.state.transverse_strength} mT")
 
     def update_button_labels(self):
-        self.magnet_enable_button.text = '磁场:开' if self.state.magnet_enabled else '磁场:关'
-        self.magnet_direction_button.text = '极性:-' if self.state.magnet_direction < 0 else '极性:+'
+        # 不再显示全局磁场开关/极性/方向
+        self.axial_enable_button.text = f"纵向B:{int(self.state.axial_strength)}mT" if self.state.axial_enabled else f"纵向B:关"
+        self.trans_enable_button.text = f"横向B:{int(self.state.transverse_strength)}mT" if self.state.transverse_enabled else f"横向B:关"
 
     def update(self, event=None):
         for sub_module in self.sub_module.values():
@@ -167,8 +202,18 @@ class Panel(BasicModule):
         self.ua_increment_button.draw()
         self.ua_scan_button.draw()
         self.update_button_labels()
-        self.magnet_enable_button.draw()
-        self.magnet_direction_button.draw()
+        # 不再绘制全局磁场开关与极性按钮
+        # 轴向/横向控制
+        self.axial_enable_button.draw()
+        self.axial_inc_button.draw()
+        self.axial_dec_button.draw()
+        self.trans_enable_button.draw()
+        self.trans_inc_button.draw()
+        self.trans_dec_button.draw()
+
+        # 小文字说明
+        note_surf = self.font_small.render('档位: 0,5,10,15,20,25 mT，步进=5', True, (10,10,10))
+        self.screen.blit(note_surf, (920, 300))
 
         if self.state.helper.get('auto_scan', False):
             self.auto_scan_timer += 1
@@ -185,5 +230,12 @@ class Panel(BasicModule):
                 btn.handle_event(event)
             self.ua_increment_button.handle_event(event)
             self.ua_scan_button.handle_event(event)
-            self.magnet_enable_button.handle_event(event)
-            self.magnet_direction_button.handle_event(event)
+            # 全局磁场按钮已移除；通过轴向/横向的 + / - 档位进行控制
+            # axial/transverse handlers
+            self.axial_enable_button.handle_event(event)
+            self.axial_inc_button.handle_event(event)
+            self.axial_dec_button.handle_event(event)
+            self.trans_enable_button.handle_event(event)
+            self.trans_inc_button.handle_event(event)
+            self.trans_dec_button.handle_event(event)
+

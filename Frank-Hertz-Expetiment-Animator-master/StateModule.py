@@ -9,7 +9,14 @@ class State(object):
         self.Ie = 0
         self.magnet_enabled = False
         self.magnet_strength = 0.0
+        # 磁场方向：'transverse' 横向（垂直于管轴），'axial' 轴向（沿管轴）
+        self.magnet_orientation = 'transverse'
         self.magnet_direction = 1
+        # 新增：独立的轴向和横向磁场开关与强度（单位：mT，档位 0,5,10,15,20,25）
+        self.axial_enabled = False
+        self.transverse_enabled = False
+        self.axial_strength = 0.0
+        self.transverse_strength = 0.0
         self.helper = {
             'plot': False,
             'UI': {},
@@ -38,4 +45,28 @@ class State(object):
                 self.Ie = value
             if key == 'magnet_strength':
                 self.magnet_strength = value
+            if key == 'magnet_orientation':
+                # 允许通过setter变更方向（接收字符串）
+                if value in ('transverse', 'axial'):
+                    self.magnet_orientation = value
+            if key == 'axial_strength':
+                try:
+                    self.axial_strength = float(value)
+                except Exception:
+                    pass
+            if key == 'transverse_strength':
+                try:
+                    self.transverse_strength = float(value)
+                except Exception:
+                    pass
+            if key == 'axial_enabled':
+                try:
+                    self.axial_enabled = bool(value)
+                except Exception:
+                    pass
+            if key == 'transverse_enabled':
+                try:
+                    self.transverse_enabled = bool(value)
+                except Exception:
+                    pass
         return set_value
